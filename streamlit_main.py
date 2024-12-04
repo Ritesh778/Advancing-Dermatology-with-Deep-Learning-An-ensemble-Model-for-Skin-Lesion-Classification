@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from keras.utils import custom_object_scope
 import torch
 import plotly.graph_objects as go  # Import Plotly
-
+import os 
 from torchvision import transforms
 
 # Load the U-Net model with custom object scope
@@ -77,6 +77,25 @@ def recall(y_true, y_pred):
     recall = true_positives / (possible_positives + np.finfo(np.float32).eps)
     return recall
 
+
+def apply_mask_and_enhance(input_image, mask):
+    # Resize the mask to match the input image if necessary
+    input_image=cv2.imread(input_image)
+    mask=cv2.imread(mask,cv2.IMREAD_GRAYSCALE)
+
+    if input_image.shape[:2] != mask.shape:
+        mask = cv2.resize(mask, (input_image.shape[1], input_image.shape[0]))
+
+    # Ensure the mask is binary (black and white)
+    mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)[1]
+    mask= mask
+    # Convert the mask to a 3-channel image to match the input image
+    mask_3_channel = cv2.merge([mask] * 3)
+
+    # Combine the input image and the mask
+    result = cv2.bitwise_and(input_image, mask_3_channel)
+
+    return result
 # Load models
 segmentation_model = load_segmentation_model()
 # vgg16_model, resnet101_model, densenet_model = load_pytorch_models()
@@ -89,7 +108,8 @@ def theme_page():
     st.image(resized_image, caption='Skin Lesion Image', use_column_width=True)
     st.write('Our application is designed to detect and classify different types of skin lesions using state-of-the-art deep learning models. By leveraging advanced segmentation and classification techniques, we aim to provide accurate and reliable results to aid in the early detection and diagnosis of various skin conditions.')
     st.write('The project aims to develop a robust skin lesion classification system capable of accurately identifying and classifying lesions into seven different diseases. Leveraging the power of both semantic segmentation and image classification, we propose an ensembling approach that combines the U-Net architecture for precise lesion segmentation with the VGG network for disease classification. The U-Net model will be utilized to perform pixel-level segmentation of skin lesions, providing detailed information about lesion boundaries. Subsequently, the segmented regions will be fed into VGG and Res-Net for classification in an ensemble can further enhance the model performance for disease classification, enabling the model to make predictions based on both localized features and overall lesion characteristics.')
-
+def save_segmented_image(segmentation_result, output_path):
+    plt.imsave(output_path, segmentation_result.reshape(224, 224), cmap='binary_r')
 # File upload page
 def file_upload_page():
     st.title('Upload an Image')
@@ -98,12 +118,25 @@ def file_upload_page():
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.image(image, caption='Uploaded Image', use_column_width=True)
+        # Get the file extension
+        file_extension = os.path.splitext(uploaded_file.name)[1]
+        
+        # Define the path to save the image
+        save_path = f"uploaded_image{file_extension}"
 
+        # Save the image to the system
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        st.success(f"Image saved to {save_path}")
         # Perform segmentation
         img_array = np.array(image)
         segmentation_result = perform_segmentation(img_array, segmentation_model)
-        segmentation_result = np.squeeze(segmentation_result, axis=0)  # Remove the channel dimension
-        st.image(segmentation_result, caption='Segmentation Result', use_column_width=True)
+        # segmentation_result = np.squeeze(segmentation_result, axis=0)  # Remove the channel dimension
+        segmented_image_path = "./segmented_output.png"
+        save_segmented_image(segmentation_result, segmented_image_path)
+        k = apply_mask_and_enhance(save_path,segmented_image_path)
+        st.image(k, caption='Segmentation Result', use_column_width=True)
 
         # Convert image to PyTorch tensor and normalize
         test_transform = transforms.Compose([
